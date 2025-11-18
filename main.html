@@ -2,10 +2,11 @@
 <html lang="id">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Simulasi Kipas Angin - GLBB Rotasi</title>
   <style>
     body { font-family: Arial, sans-serif; display:flex; flex-direction:row; align-items:flex-start; justify-content:center; gap:16px; background:#edf1f5; padding:16px; color:#1f2933; }
-    #gl-canvas { border:1px solid #b0bec5; background:#1a1a1a; box-shadow:0 4px 16px rgba(0,0,0,0.18); }
+    #gl-canvas { border:1px solid #b0bec5; background:#1a1a1a; box-shadow:0 4px 16px rgba(0,0,0,0.18); border-radius:10px; }
     .controls { width:360px; max-height:95vh; overflow:auto; background:#fff; padding:14px; border-radius:10px; box-shadow:0 4px 18px rgba(15,23,42,0.15); font-size:13px; }
     .controls h3 { margin:0 0 10px; font-size:18px; color:#0b2e4a; }
     .section { margin:12px 0; padding:10px; border:1px solid #d0d7de; border-radius:8px; background:#f9fbfd; }
@@ -13,7 +14,7 @@
     .row { display:flex; align-items:center; gap:8px; margin:6px 0; }
     label { width:130px; font-size:13px; }
     input[type="range"] { flex:1; }
-    input[type="color"] { border:none; background:none; }
+    input[type="color"] { border:none; background:none; padding:0; width:40px; height:22px; }
     button { width:100%; padding:8px 10px; border:none; border-radius:6px; background:#0b72b9; color:#fff; font-weight:bold; cursor:pointer; }
     button:hover { background:#095f98; }
     .value-pill { min-width:54px; text-align:right; font-weight:bold; color:#0b2e4a; }
@@ -22,6 +23,11 @@
     .output-item span { font-size:12px; color:#536471; }
     .output-item strong { font-size:16px; margin-top:4px; color:#0b2e4a; }
     .toggle-row { display:flex; align-items:center; justify-content:space-between; margin-top:6px; }
+    @media (max-width: 1200px) {
+      body { flex-direction:column; align-items:center; }
+      #gl-canvas { width:100%; height:auto; max-width:720px; aspect-ratio:1/1; }
+      .controls { width:100%; max-width:720px; }
+    }
   </style>
 </head>
 <body>
@@ -34,30 +40,30 @@
   <div class="section">
     <h4>Parameter Gerak</h4>
     <div class="row">
-      <label>ω₀ (rad/s)</label>
+      <label for="omega0Input">ω₀ (rad/s)</label>
       <input id="omega0Input" type="range" min="0" max="20" step="0.1" value="6" />
       <div class="value-pill" id="omega0Value">6.00</div>
     </div>
     <div class="row">
-      <label>α (rad/s²)</label>
+      <label for="alphaInput">α (rad/s²)</label>
       <input id="alphaInput" type="range" min="-5" max="5" step="0.05" value="0.8" />
       <div class="value-pill" id="alphaValue">0.80</div>
     </div>
     <div class="row">
-      <label>Radius bilah (m)</label>
+      <label for="radiusInput">Radius bilah (m)</label>
       <input id="radiusInput" type="range" min="0.2" max="1.0" step="0.01" value="0.70" />
       <div class="value-pill" id="radiusValue">0.70</div>
     </div>
     <div class="row">
-      <label>waktu t (s)</label>
+      <label for="timeInput">waktu t (s)</label>
       <input id="timeInput" type="range" min="0" max="25" step="0.01" value="0" />
       <div class="value-pill" id="timeValue">0.00</div>
     </div>
     <div class="toggle-row">
-      <label>Otomatis (t berjalan)</label>
+      <label for="autoTimeToggle">Otomatis (t berjalan)</label>
       <input id="autoTimeToggle" type="checkbox" checked />
     </div>
-    <button id="resetTimeBtn" style="margin-top:10px;">Setel Ulang Waktu</button>
+    <button id="resetTimeBtn">Setel Ulang Waktu</button>
   </div>
 
   <div class="section">
@@ -84,97 +90,36 @@
 
   <div class="section">
     <h4>Transformasi Objek</h4>
-    <div class="row"><label>Rotasi X</label><input id="rotateX" type="range" min="-90" max="90" step="1" value="0" /></div>
-    <div class="row"><label>Rotasi Y</label><input id="rotateY" type="range" min="-180" max="180" step="1" value="0" /></div>
-    <div class="row"><label>Rotasi Z</label><input id="rotateZ" type="range" min="-180" max="180" step="1" value="0" /></div>
-    <div class="row"><label>Geser X</label><input id="transX" type="range" min="-2" max="2" step="0.01" value="0" /></div>
-    <div class="row"><label>Geser Y</label><input id="transY" type="range" min="-2" max="2" step="0.01" value="-0.2" /></div>
-    <div class="row"><label>Geser Z</label><input id="transZ" type="range" min="-10" max="-2" step="0.01" value="-7" /></div>
-    <div class="row"><label>Skala</label><input id="scale" type="range" min="0.5" max="2.5" step="0.01" value="1" /></div>
+    <div class="row"><label for="rotateX">Rotasi X</label><input id="rotateX" type="range" min="-90" max="90" step="1" value="0" /></div>
+    <div class="row"><label for="rotateY">Rotasi Y</label><input id="rotateY" type="range" min="-180" max="180" step="1" value="0" /></div>
+    <div class="row"><label for="rotateZ">Rotasi Z</label><input id="rotateZ" type="range" min="-180" max="180" step="1" value="0" /></div>
+    <div class="row"><label for="transX">Geser X</label><input id="transX" type="range" min="-2" max="2" step="0.01" value="0" /></div>
+    <div class="row"><label for="transY">Geser Y</label><input id="transY" type="range" min="-2" max="2" step="0.01" value="-0.2" /></div>
+    <div class="row"><label for="transZ">Geser Z</label><input id="transZ" type="range" min="-10" max="-2" step="0.01" value="-7" /></div>
+    <div class="row"><label for="scale">Skala</label><input id="scale" type="range" min="0.5" max="2.5" step="0.01" value="1" /></div>
   </div>
 
   <div class="section">
     <h4>Kamera</h4>
-    <div class="row"><label>Kamera X</label><input id="camX" type="range" min="-10" max="10" step="0.1" value="0" /></div>
-    <div class="row"><label>Kamera Y</label><input id="camY" type="range" min="-10" max="10" step="0.1" value="0.6" /></div>
-    <div class="row"><label>Kamera Z</label><input id="camZ" type="range" min="2" max="15" step="0.1" value="6.5" /></div>
+    <div class="row"><label for="camX">Kamera X</label><input id="camX" type="range" min="-10" max="10" step="0.1" value="0" /></div>
+    <div class="row"><label for="camY">Kamera Y</label><input id="camY" type="range" min="-10" max="10" step="0.1" value="0.6" /></div>
+    <div class="row"><label for="camZ">Kamera Z</label><input id="camZ" type="range" min="2" max="15" step="0.1" value="6.5" /></div>
   </div>
 
   <div class="section">
     <h4>Pencahayaan</h4>
-    <div class="row"><label>Ambient</label><input id="ambientColor" type="color" value="#595959" /></div>
-    <div class="row"><label>Diffuse</label><input id="diffuseColor" type="color" value="#bfbfbf" /></div>
-    <div class="row"><label>Specular</label><input id="specularColor" type="color" value="#ffffff" /></div>
-    <div class="row"><label>Light X</label><input id="lightX" type="range" min="-10" max="10" step="0.1" value="3" /></div>
-    <div class="row"><label>Light Y</label><input id="lightY" type="range" min="-10" max="10" step="0.1" value="4" /></div>
-    <div class="row"><label>Light Z</label><input id="lightZ" type="range" min="-10" max="10" step="0.1" value="4" /></div>
+    <div class="row"><label for="ambientColor">Ambient</label><input id="ambientColor" type="color" value="#595959" /></div>
+    <div class="row"><label for="diffuseColor">Diffuse</label><input id="diffuseColor" type="color" value="#bfbfbf" /></div>
+    <div class="row"><label for="specularColor">Specular</label><input id="specularColor" type="color" value="#ffffff" /></div>
+    <div class="row"><label for="lightX">Light X</label><input id="lightX" type="range" min="-10" max="10" step="0.1" value="3" /></div>
+    <div class="row"><label for="lightY">Light Y</label><input id="lightY" type="range" min="-10" max="10" step="0.1" value="4" /></div>
+    <div class="row"><label for="lightZ">Light Z</label><input id="lightZ" type="range" min="-10" max="10" step="0.1" value="4" /></div>
   </div>
 
   <button id="resetBtn">Reset Seluruh Parameter</button>
 </div>
 
-<!-- Vertex shader -->
-<script id="vertex-shader" type="x-shader/x-vertex">
-attribute vec4 vPosition;
-attribute vec4 vColor;
-attribute vec2 vTexCoord;
-varying vec4 vColorInterp;
-varying vec3 vNormal;
-varying vec3 vPositionWorld;
-varying vec2 vTexCoordV;
-
-uniform mat4 modelViewMatrix;
-uniform mat4 projectionMatrix;
-
-void main() {
-  gl_Position = projectionMatrix * modelViewMatrix * vPosition;
-  vColorInterp = vColor;
-  vTexCoordV = vTexCoord;
-  vPositionWorld = vec3(modelViewMatrix * vPosition);
-  vNormal = normalize(mat3(modelViewMatrix) * vec3(0.0, 0.0, 1.0));
-}
-</script>
-
-<!-- Fragment shader -->
-<script id="fragment-shader" type="x-shader/x-fragment">
-precision mediump float;
-varying vec4 vColorInterp;
-varying vec3 vNormal;
-varying vec3 vPositionWorld;
-varying vec2 vTexCoordV;
-
-uniform vec3 ambientColor;
-uniform vec3 diffuseColor;
-uniform vec3 specularColor;
-uniform vec3 lightPos;
-uniform sampler2D uSampler;
-uniform bool useTexture;
-
-void main() {
-  vec3 N = normalize(vNormal);
-  vec3 L = normalize(lightPos - vPositionWorld);
-  float diff = max(dot(N, L), 0.0);
-
-  vec3 V = normalize(-vPositionWorld);
-  vec3 R = reflect(-L, N);
-  float spec = pow(max(dot(R, V), 0.0), 64.0);
-
-  vec3 ambient = ambientColor * vColorInterp.rgb;
-  vec3 diffuse = diffuseColor * vColorInterp.rgb * diff;
-  vec3 specular = specularColor * spec;
-
-  vec3 color = ambient + diffuse + specular;
-  if(useTexture) {
-    vec4 t = texture2D(uSampler, vTexCoordV);
-    gl_FragColor = vec4(color * t.rgb, vColorInterp.a * t.a);
-  } else {
-    gl_FragColor = vec4(color, vColorInterp.a);
-  }
-}
-</script>
-
-<script src="MVnew.js"></script>
-<script src="initShaders.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.min.js"></script>
 <script src="main.js"></script>
 
 </body>

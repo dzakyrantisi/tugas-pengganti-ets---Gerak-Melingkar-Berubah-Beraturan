@@ -1,95 +1,76 @@
 "use strict";
 
-var gl;
-var points = [];
-var colors = [];
-var texcoords = [];
-var meshes = {};
+let renderer;
+let scene;
+let camera;
+let fanGroup;
+let bladesGroup;
+let lookTarget;
+let ambientLight;
+let mainLight;
 
-var vBuffer, cBuffer, tBuffer;
-var vPositionLoc, vColorLoc, vTexCoordLoc;
-var modelViewMatrixLoc, projectionMatrixLoc;
-var ambientColorLoc, diffuseColorLoc, specularColorLoc, lightPosLoc;
-var useTextureLoc;
+let materials = [];
 
-var camX = 0.0, camY = 0.6, camZ = 6.5;
+let camX = 0.0, camY = 0.6, camZ = 6.5;
 
-var ambientColor = [0.35, 0.35, 0.35];
-var diffuseColor = [0.75, 0.75, 0.75];
-var specularColor = [1.0, 1.0, 1.0];
-var lightPos = [3.0, 4.0, 4.0];
+let ambientColor = [0.35, 0.35, 0.35];
+let diffuseColor = [0.75, 0.75, 0.75];
+let specularColor = [1.0, 1.0, 1.0];
+let lightPos = [3.0, 4.0, 4.0];
 
-var tx = 0.0, ty = -0.2, tz = -7.0;
-var rx = 0.0, ry = 0.0, rz = 0.0;
-var scaleVal = 1.0;
+let tx = 0.0, ty = -0.2, tz = -7.0;
+let rx = 0.0, ry = 0.0, rz = 0.0;
+let scaleVal = 1.0;
 
-var omega0 = 6.0;
-var alpha = 0.8;
-var radius = 0.7;
-var timeParam = 0.0;
-var autoTime = true;
-var timeSliderMax = 25.0;
-var lastTimestamp = null;
+let omega0 = 6.0;
+let alpha = 0.8;
+let radius = 0.7;
+let timeParam = 0.0;
+let autoTime = true;
+const timeSliderMax = 25.0;
+let lastTimestamp = null;
 
-var physics = { theta: 0.0, omega: 0.0, linear: 0.0, tangential: 0.0 };
-var staticMeshes = [];
-var wireMeshes = [];
-var bladeBaseAngles = [0, 120, 240];
-var bladeTiltDeg = -12;
-var bladeMeshName = "fanBlade";
-var fanHubY = 0.82;
-var headOffsetZ = 0.62;
+const physics = { theta: 0.0, omega: 0.0, linear: 0.0, tangential: 0.0 };
+const bladeBaseAngles = [0, 120, 240];
+const bladeTiltDeg = -12;
+const fanHubY = 0.82;
+const headOffsetZ = 0.62;
+
+let timeSlider;
 
 window.onload = function init() {
-    var canvas = document.getElementById("gl-canvas");
-    gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
-    if (!gl) {
-        alert("WebGL tidak tersedia");
-        return;
-    }
+    const canvas = document.getElementById("gl-canvas");
+    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    renderer.setSize(canvas.width, canvas.height, false);
 
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0.94, 0.96, 0.98);
+
+    const aspect = canvas.width / canvas.height;
+    camera = new THREE.PerspectiveCamera(55, aspect, 0.1, 50.0);
+    camera.position.set(camX, camY, camZ);
+    lookTarget = new THREE.Vector3(0.0, 0.5, 0.0);
+
+    ambientLight = new THREE.AmbientLight(colorFromArray(ambientColor));
+    scene.add(ambientLight);
+
+    mainLight = new THREE.PointLight(colorFromArray(diffuseColor), 1.4, 100);
+    mainLight.position.set(lightPos[0], lightPos[1], lightPos[2]);
+    scene.add(mainLight);
+
+    fanGroup = new THREE.Group();
+    scene.add(fanGroup);
     createFan();
+    updateLightingColors();
 
-    gl.viewport(0, 0, canvas.width, canvas.height);
-    gl.clearColor(0.94, 0.96, 0.98, 1.0);
-    gl.enable(gl.DEPTH_TEST);
+    setupUiHandlers();
 
-    var program = initShaders(gl, "vertex-shader", "fragment-shader");
-    gl.useProgram(program);
+    updatePhysicsDisplay();
+    requestAnimationFrame(render);
+};
 
-    vBuffer = gl.createBuffer();
-    cBuffer = gl.createBuffer();
-    tBuffer = gl.createBuffer();
-
-    vPositionLoc = gl.getAttribLocation(program, "vPosition");
-    vColorLoc = gl.getAttribLocation(program, "vColor");
-    vTexCoordLoc = gl.getAttribLocation(program, "vTexCoord");
-
-    modelViewMatrixLoc = gl.getUniformLocation(program, "modelViewMatrix");
-    projectionMatrixLoc = gl.getUniformLocation(program, "projectionMatrix");
-    ambientColorLoc = gl.getUniformLocation(program, "ambientColor");
-    diffuseColorLoc = gl.getUniformLocation(program, "diffuseColor");
-    specularColorLoc = gl.getUniformLocation(program, "specularColor");
-    lightPosLoc = gl.getUniformLocation(program, "lightPos");
-    useTextureLoc = gl.getUniformLocation(program, "useTexture");
-
-    function updateBuffers() {
-        gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, flatten(points), gl.STATIC_DRAW);
-
-        gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, flatten(colors), gl.STATIC_DRAW);
-
-        gl.bindBuffer(gl.ARRAY_BUFFER, tBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, flatten(texcoords), gl.STATIC_DRAW);
-    }
-
-    window.updateBuffers = updateBuffers;
-    window.rebuildFan = function () {
-        createFan();
-        updateBuffers();
-    };
-
+function setupUiHandlers() {
     document.getElementById("rotateX").addEventListener("input", function (e) {
         rx = parseFloat(e.target.value);
     });
@@ -124,21 +105,27 @@ window.onload = function init() {
 
     document.getElementById("ambientColor").addEventListener("input", function (e) {
         ambientColor = hexToRgb01(e.target.value);
+        updateLightingColors();
     });
     document.getElementById("diffuseColor").addEventListener("input", function (e) {
         diffuseColor = hexToRgb01(e.target.value);
+        updateLightingColors();
     });
     document.getElementById("specularColor").addEventListener("input", function (e) {
         specularColor = hexToRgb01(e.target.value);
+        updateMaterialSpecular();
     });
     document.getElementById("lightX").addEventListener("input", function (e) {
         lightPos[0] = parseFloat(e.target.value);
+        mainLight.position.x = lightPos[0];
     });
     document.getElementById("lightY").addEventListener("input", function (e) {
         lightPos[1] = parseFloat(e.target.value);
+        mainLight.position.y = lightPos[1];
     });
     document.getElementById("lightZ").addEventListener("input", function (e) {
         lightPos[2] = parseFloat(e.target.value);
+        mainLight.position.z = lightPos[2];
     });
 
     document.getElementById("omega0Input").addEventListener("input", function (e) {
@@ -159,7 +146,7 @@ window.onload = function init() {
         updatePhysicsDisplay();
     });
 
-    var timeSlider = document.getElementById("timeInput");
+    timeSlider = document.getElementById("timeInput");
     timeSlider.addEventListener("input", function (e) {
         timeParam = parseFloat(e.target.value);
         document.getElementById("timeValue").textContent = formatNumber(timeParam);
@@ -185,10 +172,11 @@ window.onload = function init() {
 
     document.getElementById("resetBtn").addEventListener("click", resetScene);
 
-    updateBuffers();
-    updatePhysicsDisplay();
-    requestAnimationFrame(render);
-};
+    window.rebuildFan = function () {
+        createFan();
+        updateLightingColors();
+    };
+}
 
 function resetScene() {
     tx = 0.0; ty = -0.2; tz = -7.0;
@@ -235,6 +223,10 @@ function resetScene() {
     document.getElementById("radiusValue").textContent = formatNumber(radius);
     document.getElementById("timeValue").textContent = formatNumber(timeParam);
 
+    updateLightingColors();
+    if (mainLight) {
+        mainLight.position.set(lightPos[0], lightPos[1], lightPos[2]);
+    }
     updatePhysicsDisplay();
 }
 
@@ -243,288 +235,336 @@ function formatNumber(val) {
 }
 
 function hexToRgb01(hex) {
-    hex = hex.replace('#', '');
-    if (hex.length === 3) {
-        hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+    let value = hex.replace('#', '');
+    if (value.length === 3) {
+        value = value[0] + value[0] + value[1] + value[1] + value[2] + value[2];
     }
-    var bigint = parseInt(hex, 16);
-    var r = (bigint >> 16) & 255;
-    var g = (bigint >> 8) & 255;
-    var b = bigint & 255;
+    const bigint = parseInt(value, 16);
+    const r = (bigint >> 16) & 255;
+    const g = (bigint >> 8) & 255;
+    const b = bigint & 255;
     return [r / 255, g / 255, b / 255];
 }
 
-function pushVertex(position, color, uv) {
-    points.push(position);
-    colors.push(color);
-    texcoords.push(uv || vec2(0.0, 0.0));
+function colorFromArray(arr) {
+    return new THREE.Color(arr[0], arr[1], arr[2]);
 }
 
-function addTriangle(a, b, c, color) {
-    pushVertex(a, color);
-    pushVertex(b, color);
-    pushVertex(c, color);
+function makeMaterial(rgbArr, shininess) {
+    const material = new THREE.MeshPhongMaterial({
+        color: colorFromArray(rgbArr),
+        specular: colorFromArray(specularColor),
+        shininess: shininess !== undefined ? shininess : 50,
+        side: THREE.DoubleSide
+    });
+    materials.push(material);
+    return material;
 }
 
-function addQuad(a, b, c, d, color) {
-    addTriangle(a, b, c, color);
-    addTriangle(a, c, d, color);
-}
-
-function createCylinderY(name, cx, cy, cz, topRx, topRz, bottomRx, bottomRz, height, segments, color) {
-    var start = points.length;
-    var y0 = cy - height / 2.0;
-    var y1 = cy + height / 2.0;
-    segments = segments || 48;
-
-    var topCenter = vec4(cx, y1, cz, 1.0);
-    var bottomCenter = vec4(cx, y0, cz, 1.0);
-
-    for (var i = 0; i < segments; i++) {
-        var a0 = (i / segments) * Math.PI * 2.0;
-        var a1 = ((i + 1) / segments) * Math.PI * 2.0;
-
-        var topA = vec4(cx + topRx * Math.cos(a0), y1, cz + topRz * Math.sin(a0), 1.0);
-        var topB = vec4(cx + topRx * Math.cos(a1), y1, cz + topRz * Math.sin(a1), 1.0);
-        var bottomA = vec4(cx + bottomRx * Math.cos(a0), y0, cz + bottomRz * Math.sin(a0), 1.0);
-        var bottomB = vec4(cx + bottomRx * Math.cos(a1), y0, cz + bottomRz * Math.sin(a1), 1.0);
-
-        addQuad(bottomA, bottomB, topB, topA, color);
-        addTriangle(bottomCenter, bottomA, bottomB, color);
-        addTriangle(topCenter, topB, topA, color);
+function updateLightingColors() {
+    if (ambientLight) {
+        ambientLight.color.setRGB(ambientColor[0], ambientColor[1], ambientColor[2]);
     }
-
-    meshes[name] = { start: start, count: points.length - start, center: vec3(cx, cy, cz) };
-    staticMeshes.push(name);
+    if (mainLight) {
+        mainLight.color.setRGB(diffuseColor[0], diffuseColor[1], diffuseColor[2]);
+    }
+    updateMaterialSpecular();
 }
 
-function createRing(name, cx, cy, cz, innerRadius, outerRadius, thickness, segments, color) {
-    var start = points.length;
-    var zFront = cz + thickness / 2.0;
-    var zBack = cz - thickness / 2.0;
-    segments = segments || 64;
-
-    for (var i = 0; i < segments; i++) {
-        var a0 = (i / segments) * Math.PI * 2.0;
-        var a1 = ((i + 1) / segments) * Math.PI * 2.0;
-
-        var outer0Front = vec4(cx + outerRadius * Math.cos(a0), cy + outerRadius * Math.sin(a0), zFront, 1.0);
-        var outer1Front = vec4(cx + outerRadius * Math.cos(a1), cy + outerRadius * Math.sin(a1), zFront, 1.0);
-        var inner0Front = vec4(cx + innerRadius * Math.cos(a0), cy + innerRadius * Math.sin(a0), zFront, 1.0);
-        var inner1Front = vec4(cx + innerRadius * Math.cos(a1), cy + innerRadius * Math.sin(a1), zFront, 1.0);
-
-        var outer0Back = vec4(cx + outerRadius * Math.cos(a0), cy + outerRadius * Math.sin(a0), zBack, 1.0);
-        var outer1Back = vec4(cx + outerRadius * Math.cos(a1), cy + outerRadius * Math.sin(a1), zBack, 1.0);
-        var inner0Back = vec4(cx + innerRadius * Math.cos(a0), cy + innerRadius * Math.sin(a0), zBack, 1.0);
-        var inner1Back = vec4(cx + innerRadius * Math.cos(a1), cy + innerRadius * Math.sin(a1), zBack, 1.0);
-
-        addQuad(inner0Front, outer0Front, outer1Front, inner1Front, color);
-        addQuad(inner1Back, outer1Back, outer0Back, inner0Back, color);
-        addQuad(outer0Front, outer1Front, outer1Back, outer0Back, color);
-        addQuad(inner1Front, inner0Front, inner0Back, inner1Back, color);
-    }
-
-    meshes[name] = { start: start, count: points.length - start, center: vec3(cx, cy, cz) };
-    staticMeshes.push(name);
-}
-
-function createExtrudedPolygon(name, points2d, thickness, color, skipStaticRegister, offset) {
-    var start = points.length;
-    var half = thickness / 2.0;
-    var zTop = half;
-    var zBottom = -half;
-    offset = offset || vec3(0.0, 0.0, 0.0);
-    var ox = offset[0], oy = offset[1], oz = offset[2];
-
-    for (var i = 1; i < points2d.length - 1; i++) {
-        var p0 = points2d[0];
-        var p1 = points2d[i];
-        var p2 = points2d[i + 1];
-        addTriangle(
-            vec4(p0[0] + ox, p0[1] + oy, zBottom + oz, 1.0),
-            vec4(p1[0] + ox, p1[1] + oy, zBottom + oz, 1.0),
-            vec4(p2[0] + ox, p2[1] + oy, zBottom + oz, 1.0),
-            color
-        );
-        addTriangle(
-            vec4(p0[0] + ox, p0[1] + oy, zTop + oz, 1.0),
-            vec4(p2[0] + ox, p2[1] + oy, zTop + oz, 1.0),
-            vec4(p1[0] + ox, p1[1] + oy, zTop + oz, 1.0),
-            color
-        );
-    }
-
-    for (var k = 0; k < points2d.length; k++) {
-        var next = (k + 1) % points2d.length;
-        var a = points2d[k];
-        var b = points2d[next];
-        addQuad(
-            vec4(a[0] + ox, a[1] + oy, zBottom + oz, 1.0),
-            vec4(b[0] + ox, b[1] + oy, zBottom + oz, 1.0),
-            vec4(b[0] + ox, b[1] + oy, zTop + oz, 1.0),
-            vec4(a[0] + ox, a[1] + oy, zTop + oz, 1.0),
-            color
-        );
-    }
-
-    meshes[name] = { start: start, count: points.length - start, center: vec3(0.0, 0.0, 0.0) };
-    if (!skipStaticRegister) {
-        staticMeshes.push(name);
-    }
-}
-
-function createBox(name, cx, cy, cz, sizeX, sizeY, sizeZ, color) {
-    var start = points.length;
-    var hx = sizeX / 2.0;
-    var hy = sizeY / 2.0;
-    var hz = sizeZ / 2.0;
-
-    var x0 = cx - hx, x1 = cx + hx;
-    var y0 = cy - hy, y1 = cy + hy;
-    var z0 = cz - hz, z1 = cz + hz;
-
-    var a = vec4(x0, y0, z0, 1.0);
-    var b = vec4(x1, y0, z0, 1.0);
-    var c = vec4(x1, y1, z0, 1.0);
-    var d = vec4(x0, y1, z0, 1.0);
-    var e = vec4(x0, y0, z1, 1.0);
-    var f = vec4(x1, y0, z1, 1.0);
-    var g = vec4(x1, y1, z1, 1.0);
-    var h = vec4(x0, y1, z1, 1.0);
-
-    addQuad(a, b, f, e, color); // bottom
-    addQuad(d, c, g, h, color); // top
-    addQuad(e, f, g, h, color); // front (z1)
-    addQuad(a, d, h, e, color); // left (x0)
-    addQuad(b, c, g, f, color); // right (x1)
-    addQuad(a, b, c, d, color); // back (z0)
-
-    meshes[name] = { start: start, count: points.length - start, center: vec3(cx, cy, cz) };
-    staticMeshes.push(name);
-}
-
-function createRotatedBeam(name, cx, cy, cz, length, thickness, depth, angleDeg, color) {
-    var start = points.length;
-    var halfL = length / 2.0;
-    var halfT = thickness / 2.0;
-    var halfD = depth / 2.0;
-    var rad = radians(angleDeg);
-    var cosA = Math.cos(rad);
-    var sinA = Math.sin(rad);
-
-    function transformVertex(x, y, z) {
-        var rx = x * cosA - y * sinA;
-        var ry = x * sinA + y * cosA;
-        return vec4(cx + rx, cy + ry, cz + z, 1.0);
-    }
-
-    var vertices = [
-        transformVertex(-halfL, -halfT, -halfD),
-        transformVertex(halfL, -halfT, -halfD),
-        transformVertex(halfL, halfT, -halfD),
-        transformVertex(-halfL, halfT, -halfD),
-        transformVertex(-halfL, -halfT, halfD),
-        transformVertex(halfL, -halfT, halfD),
-        transformVertex(halfL, halfT, halfD),
-        transformVertex(-halfL, halfT, halfD)
-    ];
-
-    addQuad(vertices[0], vertices[1], vertices[2], vertices[3], color);
-    addQuad(vertices[4], vertices[7], vertices[6], vertices[5], color);
-    addQuad(vertices[0], vertices[4], vertices[5], vertices[1], color);
-    addQuad(vertices[1], vertices[5], vertices[6], vertices[2], color);
-    addQuad(vertices[2], vertices[6], vertices[7], vertices[3], color);
-    addQuad(vertices[3], vertices[7], vertices[4], vertices[0], color);
-
-    meshes[name] = { start: start, count: points.length - start, center: vec3(cx, cy, cz) };
-    staticMeshes.push(name);
-}
-
-function createRadialWire(name, angleDeg, innerRadius, outerRadius, width, thickness, color) {
-    var ang = radians(angleDeg);
-    var dirX = Math.cos(ang);
-    var dirY = Math.sin(ang);
-    var perpX = -dirY;
-    var perpY = dirX;
-    var halfW = width / 2.0;
-    var offsetY = fanHubY;
-
-    var p0 = vec2(innerRadius * dirX + perpX * halfW, offsetY + innerRadius * dirY + perpY * halfW);
-    var p1 = vec2(outerRadius * dirX + perpX * halfW * 0.4, offsetY + outerRadius * dirY + perpY * halfW * 0.4);
-    var p2 = vec2(outerRadius * dirX - perpX * halfW * 0.4, offsetY + outerRadius * dirY - perpY * halfW * 0.4);
-    var p3 = vec2(innerRadius * dirX - perpX * halfW, offsetY + innerRadius * dirY - perpY * halfW);
-
-    createExtrudedPolygon(name, [p0, p1, p2, p3], thickness, color, true, vec3(0.0, 0.0, headOffsetZ));
-    wireMeshes.push(name);
+function updateMaterialSpecular() {
+    const specColor = colorFromArray(specularColor);
+    materials.forEach(function (material) {
+        if (material.isMeshPhongMaterial) {
+            material.specular.copy(specColor);
+        }
+    });
 }
 
 function createFan() {
-    points.length = 0;
-    colors.length = 0;
-    texcoords.length = 0;
-    meshes = {};
-    staticMeshes = [];
-    wireMeshes = [];
-
-    var silver = vec4(0.68, 0.68, 0.7, 1.0);
-    var lightGray = vec4(0.82, 0.82, 0.84, 1.0);
-    var darkGray = vec4(0.3, 0.3, 0.32, 1.0);
-    var accent = vec4(0.88, 0.88, 0.9, 1.0);
-    var warmGray = vec4(0.55, 0.55, 0.57, 1.0);
-    var bladeBlue = vec4(0.18, 0.42, 0.82, 1.0);
-
-    createCylinderY("baseDisk", 0.0, -1.58, 0.0, 1.05, 1.05, 1.22, 1.22, 0.2, 72, silver);
-    createCylinderY("baseLip", 0.0, -1.49, 0.0, 0.82, 0.82, 0.98, 0.98, 0.12, 64, accent);
-    createCylinderY("baseCore", 0.0, -1.12, 0.0, 0.22, 0.22, 0.28, 0.28, 0.64, 48, silver);
-
-    createBox("standLower", 0.0, -0.78, 0.08, 0.34, 0.88, 0.28, warmGray);
-    createBox("standInset", 0.0, -0.78, 0.11, 0.22, 0.72, 0.18, darkGray);
-    createBox("standConnector", 0.0, -0.22, 0.12, 0.24, 0.26, 0.2, warmGray);
-
-    createBox("controlPanel", 0.0, -0.94, 0.22, 0.18, 0.3, 0.08, darkGray);
-    for (var b = 0; b < 4; b++) {
-        var buttonY = -0.88 + b * 0.1;
-        createBox("controlButton" + b, 0.06, buttonY, 0.27, 0.05, 0.08, 0.04, accent);
+    if (!fanGroup) {
+        fanGroup = new THREE.Group();
+        scene.add(fanGroup);
     }
 
-    createBox("neckBracket", 0.0, 0.05, 0.16, 0.32, 0.3, 0.28, silver);
-    createCylinderY("neckPivot", 0.0, 0.18, 0.32, 0.2, 0.2, 0.2, 0.2, 0.16, 48, darkGray);
+    fanGroup.clear();
+    materials = [];
 
-    var bracketShape = [
-        vec2(-0.09, 0.18),
-        vec2(0.11, 0.18),
-        vec2(0.2, 0.62),
-        vec2(0.01, 0.62)
+    const staticGroup = new THREE.Group();
+    fanGroup.add(staticGroup);
+
+    bladesGroup = new THREE.Group();
+    bladesGroup.position.set(0.0, fanHubY, headOffsetZ);
+    fanGroup.add(bladesGroup);
+
+    const silver = [0.68, 0.68, 0.7];
+    const lightGray = [0.82, 0.82, 0.84];
+    const darkGray = [0.3, 0.3, 0.32];
+    const accent = [0.88, 0.88, 0.9];
+    const warmGray = [0.55, 0.55, 0.57];
+    const bladeBlue = [0.18, 0.42, 0.82];
+
+    addCylinder(staticGroup, {
+        radiusTop: 1.05,
+        radiusBottom: 1.22,
+        height: 0.2,
+        segments: 72,
+        position: [0.0, -1.58, 0.0],
+        color: silver
+    });
+
+    addCylinder(staticGroup, {
+        radiusTop: 0.82,
+        radiusBottom: 0.98,
+        height: 0.12,
+        segments: 64,
+        position: [0.0, -1.49, 0.0],
+        color: accent
+    });
+
+    addCylinder(staticGroup, {
+        radiusTop: 0.22,
+        radiusBottom: 0.28,
+        height: 0.64,
+        segments: 48,
+        position: [0.0, -1.12, 0.0],
+        color: silver
+    });
+
+    addBox(staticGroup, {
+        size: [0.34, 0.88, 0.28],
+        position: [0.0, -0.78, 0.08],
+        color: warmGray
+    });
+
+    addBox(staticGroup, {
+        size: [0.22, 0.72, 0.18],
+        position: [0.0, -0.78, 0.11],
+        color: darkGray
+    });
+
+    addBox(staticGroup, {
+        size: [0.24, 0.26, 0.2],
+        position: [0.0, -0.22, 0.12],
+        color: warmGray
+    });
+
+    addBox(staticGroup, {
+        size: [0.18, 0.3, 0.08],
+        position: [0.0, -0.94, 0.22],
+        color: darkGray
+    });
+
+    for (let b = 0; b < 4; b++) {
+        const buttonY = -0.88 + b * 0.1;
+        addBox(staticGroup, {
+            size: [0.05, 0.08, 0.04],
+            position: [0.06, buttonY, 0.27],
+            color: accent
+        });
+    }
+
+    addBox(staticGroup, {
+        size: [0.32, 0.3, 0.28],
+        position: [0.0, 0.05, 0.16],
+        color: silver
+    });
+
+    addCylinder(staticGroup, {
+        radiusTop: 0.2,
+        radiusBottom: 0.2,
+        height: 0.16,
+        segments: 48,
+        position: [0.0, 0.18, 0.32],
+        color: darkGray
+    });
+
+    const bracketShape = [
+        [-0.09, 0.18],
+        [0.11, 0.18],
+        [0.2, 0.62],
+        [0.01, 0.62]
     ];
-    createExtrudedPolygon("tiltBracket", bracketShape, 0.16, silver, false, vec3(0.0, 0.0, 0.28));
+    addExtrudedPolygon(staticGroup, bracketShape, 0.16, silver, [0.0, 0.0, 0.28]);
 
-    var armDepth = headOffsetZ - 0.18;
-    var armCenterZ = 0.18 + armDepth / 2.0;
-    createBox("supportArm", 0.0, 0.72, armCenterZ, 0.16, 0.14, armDepth, silver);
-    createBox("armCollar", 0.0, 0.6, 0.26, 0.2, 0.18, 0.24, darkGray);
-    createCylinderY("armPivot", 0.0, 0.62, 0.36, 0.11, 0.11, 0.11, 0.11, 0.14, 48, darkGray);
+    const armDepth = headOffsetZ - 0.18;
+    const armCenterZ = 0.18 + armDepth / 2.0;
+    addBox(staticGroup, {
+        size: [0.16, 0.14, armDepth],
+        position: [0.0, 0.72, armCenterZ],
+        color: silver
+    });
 
-    var housingDepth = 0.46;
-    var housingCenterZ = headOffsetZ - 0.23;
-    createBox("motorHousing", 0.0, fanHubY, housingCenterZ, 0.62, 0.36, housingDepth, lightGray);
-    createBox("motorBack", 0.0, fanHubY, housingCenterZ - housingDepth / 2.0 + 0.06, 0.56, 0.32, 0.18, darkGray);
-    createCylinderY("topHandle", -0.22, fanHubY + 0.28, housingCenterZ + housingDepth / 2.0 - 0.12, 0.05, 0.05, 0.07, 0.07, 0.32, silver);
+    addBox(staticGroup, {
+        size: [0.2, 0.18, 0.24],
+        position: [0.0, 0.6, 0.26],
+        color: darkGray
+    });
 
-    createCylinderY("hub", 0.0, fanHubY, headOffsetZ, 0.12, 0.12, 0.12, 0.12, 0.28, 48, darkGray);
-    createCylinderY("hubCap", 0.0, fanHubY, headOffsetZ + 0.12, 0.16, 0.16, 0.16, 0.16, 0.08, 48, lightGray);
+    addCylinder(staticGroup, {
+        radiusTop: 0.11,
+        radiusBottom: 0.11,
+        height: 0.14,
+        segments: 48,
+        position: [0.0, 0.62, 0.36],
+        color: darkGray
+    });
 
-    createRing("fanFrameOuter", 0.0, fanHubY, headOffsetZ + 0.08, 0.7, 0.82, 0.16, 72, accent);
+    const housingDepth = 0.46;
+    const housingCenterZ = headOffsetZ - 0.23;
+    addBox(staticGroup, {
+        size: [0.62, 0.36, housingDepth],
+        position: [0.0, fanHubY, housingCenterZ],
+        color: lightGray
+    });
 
-    var bladeShape = [
-        vec2(0.0, 0.0),
-        vec2(0.18, -0.14),
-        vec2(0.62, -0.07),
-        vec2(0.74, 0.04),
-        vec2(0.6, 0.16),
-        vec2(0.22, 0.22),
-        vec2(0.04, 0.1)
+    addBox(staticGroup, {
+        size: [0.56, 0.32, 0.18],
+        position: [0.0, fanHubY, housingCenterZ - housingDepth / 2.0 + 0.06],
+        color: darkGray
+    });
+
+    addCylinder(staticGroup, {
+        radiusTop: 0.05,
+        radiusBottom: 0.07,
+        height: 0.32,
+        segments: 36,
+        position: [-0.22, fanHubY + 0.28, housingCenterZ + housingDepth / 2.0 - 0.12],
+        color: silver
+    });
+
+    addCylinder(staticGroup, {
+        radiusTop: 0.12,
+        radiusBottom: 0.12,
+        height: 0.28,
+        segments: 48,
+        position: [0.0, fanHubY, headOffsetZ],
+        color: darkGray
+    });
+
+    addCylinder(staticGroup, {
+        radiusTop: 0.16,
+        radiusBottom: 0.16,
+        height: 0.08,
+        segments: 48,
+        position: [0.0, fanHubY, headOffsetZ + 0.12],
+        color: lightGray
+    });
+
+    addRing(staticGroup, {
+        innerRadius: 0.7,
+        outerRadius: 0.82,
+        thickness: 0.16,
+        segments: 72,
+        position: [0.0, fanHubY, headOffsetZ + 0.08],
+        color: accent
+    });
+
+    const bladeGeometry = createBladeGeometry(0.06);
+    const bladeMaterial = makeMaterial(bladeBlue, 70);
+
+    bladeBaseAngles.forEach(function (angleDegValue) {
+        const bladeHolder = new THREE.Group();
+        bladeHolder.rotation.z = degToRad(angleDegValue);
+        const bladeMesh = new THREE.Mesh(bladeGeometry, bladeMaterial);
+        bladeMesh.rotation.y = degToRad(bladeTiltDeg);
+        bladeHolder.add(bladeMesh);
+        bladesGroup.add(bladeHolder);
+    });
+}
+
+function addCylinder(parent, options) {
+    const geometry = new THREE.CylinderGeometry(options.radiusTop, options.radiusBottom, options.height, options.segments || 32, 1, false);
+    const mesh = new THREE.Mesh(geometry, makeMaterial(options.color));
+    mesh.position.set(options.position[0], options.position[1], options.position[2]);
+    if (options.scale) {
+        mesh.scale.set(options.scale[0], options.scale[1], options.scale[2]);
+    }
+    parent.add(mesh);
+    return mesh;
+}
+
+function addBox(parent, options) {
+    const geometry = new THREE.BoxGeometry(options.size[0], options.size[1], options.size[2]);
+    const mesh = new THREE.Mesh(geometry, makeMaterial(options.color));
+    mesh.position.set(options.position[0], options.position[1], options.position[2]);
+    if (options.rotation) {
+        mesh.rotation.set(degToRad(options.rotation[0]), degToRad(options.rotation[1]), degToRad(options.rotation[2]));
+    }
+    parent.add(mesh);
+    return mesh;
+}
+
+function addExtrudedPolygon(parent, points, thickness, color, offset) {
+    const shape = new THREE.Shape();
+    shape.moveTo(points[0][0], points[0][1]);
+    for (let i = 1; i < points.length; i++) {
+        shape.lineTo(points[i][0], points[i][1]);
+    }
+    shape.closePath();
+
+    const geometry = new THREE.ExtrudeGeometry(shape, {
+        depth: thickness,
+        bevelEnabled: false
+    });
+    geometry.translate(0, 0, -thickness / 2.0);
+    if (offset) {
+        geometry.translate(offset[0], offset[1], offset[2]);
+    }
+    const mesh = new THREE.Mesh(geometry, makeMaterial(color));
+    parent.add(mesh);
+    return mesh;
+}
+
+function addRing(parent, options) {
+    const shape = new THREE.Shape();
+    shape.absarc(0, 0, options.outerRadius, 0, Math.PI * 2, false);
+    const hole = new THREE.Path();
+    hole.absarc(0, 0, options.innerRadius, 0, Math.PI * 2, true);
+    shape.holes.push(hole);
+
+    const geometry = new THREE.ExtrudeGeometry(shape, {
+        depth: options.thickness,
+        bevelEnabled: false,
+        curveSegments: options.segments || 64
+    });
+    geometry.translate(0, 0, -options.thickness / 2.0);
+    geometry.translate(options.position[0], options.position[1], options.position[2]);
+
+    const mesh = new THREE.Mesh(geometry, makeMaterial(options.color));
+    parent.add(mesh);
+    return mesh;
+}
+
+function createBladeGeometry(thickness) {
+    const bladePoints = [
+        [0.0, 0.0],
+        [0.18, -0.14],
+        [0.62, -0.07],
+        [0.74, 0.04],
+        [0.6, 0.16],
+        [0.22, 0.22],
+        [0.04, 0.1]
     ];
-    createExtrudedPolygon(bladeMeshName, bladeShape, 0.06, bladeBlue, true);
+
+    const shape = new THREE.Shape();
+    shape.moveTo(bladePoints[0][0], bladePoints[0][1]);
+    for (let i = 1; i < bladePoints.length; i++) {
+        shape.lineTo(bladePoints[i][0], bladePoints[i][1]);
+    }
+    shape.closePath();
+
+    const geometry = new THREE.ExtrudeGeometry(shape, {
+        depth: thickness,
+        bevelEnabled: false,
+        curveSegments: 32
+    });
+    geometry.translate(0, 0, -thickness / 2.0);
+    geometry.computeVertexNormals();
+    return geometry;
+}
+
+function degToRad(deg) {
+    return deg * Math.PI / 180.0;
 }
 
 function computePhysics() {
@@ -536,7 +576,7 @@ function computePhysics() {
 }
 
 function updatePhysicsDisplay(values) {
-    var data = values || computePhysics();
+    const data = values || computePhysics();
     document.getElementById("thetaValue").textContent = data.theta.toFixed(2);
     document.getElementById("omegaValue").textContent = data.omega.toFixed(2);
     document.getElementById("linearValue").textContent = data.linear.toFixed(2);
@@ -544,20 +584,22 @@ function updatePhysicsDisplay(values) {
 }
 
 function render(timestamp) {
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    requestAnimationFrame(render);
 
     if (autoTime) {
         if (lastTimestamp === null) {
             lastTimestamp = timestamp;
         } else {
-            var delta = (timestamp - lastTimestamp) / 1000.0;
+            const delta = (timestamp - lastTimestamp) / 1000.0;
             timeParam += delta;
             if (timeParam > timeSliderMax) {
                 timeParam = timeSliderMax;
                 autoTime = false;
                 document.getElementById("autoTimeToggle").checked = false;
             }
-            document.getElementById("timeInput").value = timeParam;
+            if (timeSlider) {
+                timeSlider.value = timeParam;
+            }
             document.getElementById("timeValue").textContent = formatNumber(timeParam);
             lastTimestamp = timestamp;
         }
@@ -565,78 +607,21 @@ function render(timestamp) {
         lastTimestamp = timestamp;
     }
 
-    var currentPhysics = computePhysics();
+    const currentPhysics = computePhysics();
     updatePhysicsDisplay(currentPhysics);
 
-    var eye = vec3(camX, camY, camZ);
-    var at = vec3(0.0, 0.5, 0.0);
-    var up = vec3(0.0, 1.0, 0.0);
+    fanGroup.position.set(tx, ty, tz);
+    fanGroup.rotation.set(degToRad(rx), degToRad(ry), degToRad(rz));
+    fanGroup.scale.set(scaleVal, scaleVal, scaleVal);
 
-    var mv = lookAt(eye, at, up);
-    mv = mult(mv, translate(tx, ty, tz));
-    mv = mult(mv, rotateX(rx));
-    mv = mult(mv, rotateY(ry));
-    mv = mult(mv, rotateZ(rz));
-    mv = mult(mv, scalem(scaleVal));
+    camera.position.set(camX, camY, camZ);
+    camera.lookAt(lookTarget);
 
-    var aspect = gl.canvas.width / gl.canvas.height;
-    var projection = perspective(55, aspect, 0.1, 50.0);
+    bladesGroup.rotation.z = currentPhysics.theta;
 
-    gl.uniformMatrix4fv(projectionMatrixLoc, false, flatten(projection));
-    gl.uniform3fv(ambientColorLoc, ambientColor);
-    gl.uniform3fv(diffuseColorLoc, diffuseColor);
-    gl.uniform3fv(specularColorLoc, specularColor);
-    gl.uniform3fv(lightPosLoc, lightPos);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
-    gl.vertexAttribPointer(vPositionLoc, 4, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(vPositionLoc);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
-    gl.vertexAttribPointer(vColorLoc, 4, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(vColorLoc);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, tBuffer);
-    gl.vertexAttribPointer(vTexCoordLoc, 2, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(vTexCoordLoc);
-
-    gl.uniform1i(useTextureLoc, false);
-
-    drawMeshList(mv, staticMeshes);
-    drawMeshList(mv, wireMeshes);
-
-    var bladeBaseMatrix = mult(mv, translate(0.0, fanHubY, headOffsetZ));
-    var bladeAngleDeg = currentPhysics.theta * (180.0 / Math.PI);
-    var mesh = meshes[bladeMeshName];
-    if (mesh) {
-        for (var i = 0; i < bladeBaseAngles.length; i++) {
-            var bladeModel = mult(bladeBaseMatrix, rotateZ(bladeAngleDeg + bladeBaseAngles[i]));
-            bladeModel = mult(bladeModel, rotateY(bladeTiltDeg));
-            gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(bladeModel));
-            gl.drawArrays(gl.TRIANGLES, mesh.start, mesh.count);
-        }
+    if (mainLight) {
+        mainLight.position.set(lightPos[0], lightPos[1], lightPos[2]);
     }
 
-    requestAnimationFrame(render);
-}
-
-function drawMeshList(baseMatrix, meshNames) {
-    for (var i = 0; i < meshNames.length; i++) {
-        var mesh = meshes[meshNames[i]];
-        if (!mesh) { continue; }
-        gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(baseMatrix));
-        gl.drawArrays(gl.TRIANGLES, mesh.start, mesh.count);
-    }
-}
-
-function scalem(sx, sy, sz) {
-    if (arguments.length === 1) {
-        sy = sz = sx;
-    }
-    var result = mat4();
-    result[0][0] = sx;
-    result[1][1] = sy;
-    result[2][2] = sz;
-    result[3][3] = 1.0;
-    return result;
+    renderer.render(scene, camera);
 }
