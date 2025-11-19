@@ -24,7 +24,7 @@ let scaleVal = 1.0;
 
 let omega0 = 6.0;
 let alpha = 0.8;
-let radius = 0.7;
+const radius = 0.7;
 let timeParam = 0.0;
 let autoTime = true;
 const timeSliderMax = 25.0;
@@ -140,12 +140,6 @@ function setupUiHandlers() {
         updatePhysicsDisplay();
     });
 
-    document.getElementById("radiusInput").addEventListener("input", function (e) {
-        radius = parseFloat(e.target.value);
-        document.getElementById("radiusValue").textContent = formatNumber(radius);
-        updatePhysicsDisplay();
-    });
-
     timeSlider = document.getElementById("timeInput");
     timeSlider.addEventListener("input", function (e) {
         timeParam = parseFloat(e.target.value);
@@ -190,7 +184,6 @@ function resetScene() {
 
     omega0 = 6.0;
     alpha = 0.8;
-    radius = 0.7;
     timeParam = 0.0;
     autoTime = true;
     lastTimestamp = null;
@@ -214,13 +207,11 @@ function resetScene() {
 
     document.getElementById("omega0Input").value = omega0;
     document.getElementById("alphaInput").value = alpha;
-    document.getElementById("radiusInput").value = radius;
     document.getElementById("timeInput").value = timeParam;
     document.getElementById("autoTimeToggle").checked = autoTime;
 
     document.getElementById("omega0Value").textContent = formatNumber(omega0);
     document.getElementById("alphaValue").textContent = formatNumber(alpha);
-    document.getElementById("radiusValue").textContent = formatNumber(radius);
     document.getElementById("timeValue").textContent = formatNumber(timeParam);
 
     updateLightingColors();
